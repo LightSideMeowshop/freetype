@@ -1,0 +1,468 @@
+# .github/workflows/build-freetype-png.yml
+#
+# FreeType with libpng support for sbix (Apple Color Emoji)
+# Uses ryancheung/freetype csharp-patch branch for C# compatibility
+
+name: Build FreeType with libpng
+
+on:
+  push:
+    branches: [csharp-patch]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  LIBPNG_VERSION: "1.6.43"
+  ZLIB_VERSION: "1.3.1"
+
+jobs:
+  # ============================================
+  # WINDOWS x64
+  # ============================================
+  build-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: csharp-patch
+
+      - name: Install dependencies via vcpkg
+        run: |
+          vcpkg install zlib:x64-windows-static
+          vcpkg install libpng:x64-windows-static
+
+      - name: Apply Win64 patch
+        run: git apply 0001-Win64.patch
+
+      - name: Build FreeType
+        run: |
+          mkdir build && cd build
+          cmake .. -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_SHARED_LIBS=ON `
+            -DFT_REQUIRE_PNG=ON `
+            -DFT_REQUIRE_ZLIB=ON `
+            -DFT_DISABLE_BZIP2=ON `
+            -DFT_DISABLE_BROTLI=ON `
+            -DFT_DISABLE_HARFBUZZ=ON `
+            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . --config Release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-x64
+          path: build/Release/freetype.dll
+
+  # ============================================
+  # WINDOWS ARM64
+  # ============================================
+  build-windows-arm64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: csharp-patch
+
+      - name: Install dependencies via vcpkg
+        run: |
+          vcpkg install zlib:arm64-windows-static
+          vcpkg install libpng:arm64-windows-static
+
+      - name: Apply Win64 patch
+        run: git apply 0001-Win64.patch
+
+      - name: Build FreeType
+        run: |
+          mkdir build && cd build
+          cmake .. -G "Visual Studio 17 2022" -A ARM64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_SHARED_LIBS=ON `
+            -DFT_REQUIRE_PNG=ON `
+            -DFT_REQUIRE_ZLIB=ON `
+            -DFT_DISABLE_BZIP2=ON `
+            -DFT_DISABLE_BROTLI=ON `
+            -DFT_DISABLE_HARFBUZZ=ON `
+            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
+            -DVCPKG_TARGET_TRIPLET=arm64-windows-static `
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . --config Release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-arm64
+          path: build/Release/freetype.dll
+
+  # ============================================
+  # LINUX x64
+  # ============================================
+  build-linux-x64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: csharp-patch
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libpng-dev zlib1g-dev
+
+      - name: Build FreeType
+        run: |
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DFT_REQUIRE_PNG=ON \
+            -DFT_REQUIRE_ZLIB=ON \
+            -DFT_DISABLE_BZIP2=ON \
+            -DFT_DISABLE_BROTLI=ON \
+            -DFT_DISABLE_HARFBUZZ=ON \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(nproc)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: build/libfreetype.so*
+
+  # ============================================
+  # macOS Universal (arm64 + x86_64)
+  # ============================================
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: csharp-patch
+
+      - name: Build zlib (universal)
+        run: |
+          git clone --depth 1 --branch v${{ env.ZLIB_VERSION }} https://github.com/madler/zlib.git zlib-src
+          cd zlib-src && mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11 \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(sysctl -n hw.ncpu)
+          cmake --install .
+
+      - name: Build libpng (universal)
+        run: |
+          git clone --depth 1 --branch v${{ env.LIBPNG_VERSION }} https://github.com/glennrp/libpng.git libpng-src
+          cd libpng-src && mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11 \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps \
+            -DPNG_SHARED=OFF -DPNG_STATIC=ON -DPNG_TESTS=OFF \
+            -DPNG_ARM_NEON=off \
+            -DZLIB_LIBRARY=${{ github.workspace }}/deps/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(sysctl -n hw.ncpu)
+          cmake --install .
+
+      - name: Build FreeType (universal)
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11 \
+            -DBUILD_SHARED_LIBS=ON \
+            -DFT_REQUIRE_PNG=ON \
+            -DFT_REQUIRE_ZLIB=ON \
+            -DFT_DISABLE_BZIP2=ON \
+            -DFT_DISABLE_BROTLI=ON \
+            -DFT_DISABLE_HARFBUZZ=ON \
+            -DPNG_LIBRARY=${{ github.workspace }}/deps/lib/libpng.a \
+            -DPNG_PNG_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DZLIB_LIBRARY=${{ github.workspace }}/deps/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(sysctl -n hw.ncpu)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: build/libfreetype.dylib
+
+  # ============================================
+  # ANDROID (all ABIs)
+  # ============================================
+  build-android:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            neon: "on"
+          - abi: armeabi-v7a
+            neon: "on"
+          - abi: x86_64
+            neon: "off"
+          - abi: x86
+            neon: "off"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: csharp-patch
+
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26b
+
+      - name: Build zlib
+        run: |
+          git clone --depth 1 --branch v${{ env.ZLIB_VERSION }} https://github.com/madler/zlib.git zlib-src
+          cd zlib-src && mkdir build && cd build
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=${{ matrix.abi }} \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(nproc)
+          cmake --install .
+
+      - name: Build libpng
+        run: |
+          git clone --depth 1 --branch v${{ env.LIBPNG_VERSION }} https://github.com/glennrp/libpng.git libpng-src
+          cd libpng-src && mkdir build && cd build
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=${{ matrix.abi }} \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps \
+            -DPNG_SHARED=OFF -DPNG_STATIC=ON -DPNG_TESTS=OFF \
+            -DPNG_ARM_NEON=${{ matrix.neon }} \
+            -DZLIB_LIBRARY=${{ github.workspace }}/deps/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(nproc)
+          cmake --install .
+
+      - name: Build FreeType
+        run: |
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE=${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=${{ matrix.abi }} \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DFT_REQUIRE_PNG=ON \
+            -DFT_REQUIRE_ZLIB=ON \
+            -DFT_DISABLE_BZIP2=ON \
+            -DFT_DISABLE_BROTLI=ON \
+            -DFT_DISABLE_HARFBUZZ=ON \
+            -DPNG_LIBRARY=${{ github.workspace }}/deps/lib/libpng.a \
+            -DPNG_PNG_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DZLIB_LIBRARY=${{ github.workspace }}/deps/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(nproc)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.abi }}
+          path: build/libfreetype.so
+
+  # ============================================
+  # iOS (arm64)
+  # ============================================
+  build-ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: csharp-patch
+
+      - name: Build zlib
+        run: |
+          git clone --depth 1 --branch v${{ env.ZLIB_VERSION }} https://github.com/madler/zlib.git zlib-src
+          cd zlib-src && mkdir build && cd build
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(sysctl -n hw.ncpu)
+          cmake --install .
+
+      - name: Build libpng
+        run: |
+          git clone --depth 1 --branch v${{ env.LIBPNG_VERSION }} https://github.com/glennrp/libpng.git libpng-src
+          cd libpng-src && mkdir build && cd build
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps \
+            -DPNG_SHARED=OFF -DPNG_STATIC=ON -DPNG_TESTS=OFF \
+            -DPNG_ARM_NEON=on \
+            -DZLIB_LIBRARY=${{ github.workspace }}/deps/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(sysctl -n hw.ncpu)
+          cmake --install .
+
+      - name: Build FreeType
+        run: |
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DFT_REQUIRE_PNG=ON \
+            -DFT_REQUIRE_ZLIB=ON \
+            -DFT_DISABLE_BZIP2=ON \
+            -DFT_DISABLE_BROTLI=ON \
+            -DFT_DISABLE_HARFBUZZ=ON \
+            -DPNG_LIBRARY=${{ github.workspace }}/deps/lib/libpng.a \
+            -DPNG_PNG_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DZLIB_LIBRARY=${{ github.workspace }}/deps/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(sysctl -n hw.ncpu)
+
+      - name: Create combined static library
+        run: |
+          libtool -static -o libfreetype-fat.a \
+            build/libfreetype.a \
+            ${{ github.workspace }}/deps/lib/libpng.a \
+            ${{ github.workspace }}/deps/lib/libz.a
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-arm64
+          path: libfreetype-fat.a
+
+  # ============================================
+  # tvOS (arm64)
+  # ============================================
+  build-tvos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: csharp-patch
+
+      - name: Build zlib
+        run: |
+          git clone --depth 1 --branch v${{ env.ZLIB_VERSION }} https://github.com/madler/zlib.git zlib-src
+          cd zlib-src && mkdir build && cd build
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=tvOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(sysctl -n hw.ncpu)
+          cmake --install .
+
+      - name: Build libpng
+        run: |
+          git clone --depth 1 --branch v${{ env.LIBPNG_VERSION }} https://github.com/glennrp/libpng.git libpng-src
+          cd libpng-src && mkdir build && cd build
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=tvOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps \
+            -DPNG_SHARED=OFF -DPNG_STATIC=ON -DPNG_TESTS=OFF \
+            -DPNG_ARM_NEON=on \
+            -DZLIB_LIBRARY=${{ github.workspace }}/deps/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(sysctl -n hw.ncpu)
+          cmake --install .
+
+      - name: Build FreeType
+        run: |
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=tvOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DFT_REQUIRE_PNG=ON \
+            -DFT_REQUIRE_ZLIB=ON \
+            -DFT_DISABLE_BZIP2=ON \
+            -DFT_DISABLE_BROTLI=ON \
+            -DFT_DISABLE_HARFBUZZ=ON \
+            -DPNG_LIBRARY=${{ github.workspace }}/deps/lib/libpng.a \
+            -DPNG_PNG_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DZLIB_LIBRARY=${{ github.workspace }}/deps/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(sysctl -n hw.ncpu)
+
+      - name: Create combined static library
+        run: |
+          libtool -static -o libfreetype-fat.a \
+            build/libfreetype.a \
+            ${{ github.workspace }}/deps/lib/libpng.a \
+            ${{ github.workspace }}/deps/lib/libz.a
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tvos-arm64
+          path: libfreetype-fat.a
+
+  # ============================================
+  # Package all artifacts
+  # ============================================
+  package:
+    needs: [build-windows-x64, build-windows-arm64, build-linux-x64, build-macos, build-android, build-ios, build-tvos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Unity package structure
+        run: |
+          mkdir -p package/Plugins/Windows/x86_64
+          mkdir -p package/Plugins/Windows/ARM64
+          mkdir -p package/Plugins/Linux/x86_64
+          mkdir -p package/Plugins/macOS
+          mkdir -p package/Plugins/Android/arm64-v8a
+          mkdir -p package/Plugins/Android/armeabi-v7a
+          mkdir -p package/Plugins/Android/x86_64
+          mkdir -p package/Plugins/Android/x86
+          mkdir -p package/Plugins/iOS
+          mkdir -p package/Plugins/tvOS
+          
+          cp artifacts/win-x64/freetype.dll package/Plugins/Windows/x86_64/
+          cp artifacts/win-arm64/freetype.dll package/Plugins/Windows/ARM64/
+          cp artifacts/linux-x64/libfreetype.so* package/Plugins/Linux/x86_64/
+          cp artifacts/macos-universal/libfreetype.dylib package/Plugins/macOS/
+          cp artifacts/android-arm64-v8a/libfreetype.so package/Plugins/Android/arm64-v8a/
+          cp artifacts/android-armeabi-v7a/libfreetype.so package/Plugins/Android/armeabi-v7a/
+          cp artifacts/android-x86_64/libfreetype.so package/Plugins/Android/x86_64/
+          cp artifacts/android-x86/libfreetype.so package/Plugins/Android/x86/
+          cp artifacts/ios-arm64/libfreetype-fat.a package/Plugins/iOS/libfreetype.a
+          cp artifacts/tvos-arm64/libfreetype-fat.a package/Plugins/tvOS/libfreetype.a
+          
+          echo "FreeType with libpng (sbix) support - Built from csharp-patch branch" > package/README.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: freetype-unity-package
+          path: package/
