@@ -191,7 +191,7 @@ jobs:
           path: build/libfreetype.dylib
 
   # ============================================
-  # ANDROID (all ABIs)
+  # ANDROID (all ABIs) - 16KB aligned for Android 15+
   # ============================================
   build-android:
     runs-on: ubuntu-latest
@@ -267,6 +267,7 @@ jobs:
             -DPNG_PNG_INCLUDE_DIR=${{ github.workspace }}/deps/include \
             -DZLIB_LIBRARY=${{ github.workspace }}/deps/lib/libz.a \
             -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build . -j$(nproc)
 
@@ -448,7 +449,7 @@ jobs:
           mkdir -p package/Plugins/Android/x86
           mkdir -p package/Plugins/iOS
           mkdir -p package/Plugins/tvOS
-          
+
           cp artifacts/win-x64/freetype.dll package/Plugins/Windows/x86_64/
           cp artifacts/win-arm64/freetype.dll package/Plugins/Windows/ARM64/
           cp artifacts/linux-x64/libfreetype.so* package/Plugins/Linux/x86_64/
@@ -459,7 +460,7 @@ jobs:
           cp artifacts/android-x86/libfreetype.so package/Plugins/Android/x86/
           cp artifacts/ios-arm64/libfreetype-fat.a package/Plugins/iOS/libfreetype.a
           cp artifacts/tvos-arm64/libfreetype-fat.a package/Plugins/tvOS/libfreetype.a
-          
+
           echo "FreeType with libpng (sbix) support - Built from csharp-patch branch" > package/README.txt
 
       - uses: actions/upload-artifact@v4
