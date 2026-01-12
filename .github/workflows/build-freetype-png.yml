@@ -415,15 +415,15 @@ jobs:
           lipo -create \
             libfreetype-device.a \
             libfreetype-sim.a \
-            -output libfreetype-fat.a
+            -output libfreetype.a
 
           echo "=== Verify architectures ==="
-          lipo -info libfreetype-fat.a
+          lipo -info libfreetype.a
 
       - uses: actions/upload-artifact@v4
         with:
           name: ios-universal
-          path: libfreetype-fat.a
+          path: libfreetype.a
 
   # ============================================
   # tvOS (arm64)
@@ -532,7 +532,7 @@ jobs:
           cp artifacts/android-armeabi-v7a/libfreetype.so package/Plugins/Android/armeabi-v7a/
           cp artifacts/android-x86_64/libfreetype.so package/Plugins/Android/x86_64/
           cp artifacts/android-x86/libfreetype.so package/Plugins/Android/x86/
-          cp artifacts/ios-universal/libfreetype-fat.a package/Plugins/iOS/libfreetype.a
+          cp artifacts/ios-universal/libfreetype.a package/Plugins/iOS/libfreetype.a
           cp artifacts/tvos-arm64/libfreetype-fat.a package/Plugins/tvOS/libfreetype.a
 
           echo "=== iOS library architectures ==="
