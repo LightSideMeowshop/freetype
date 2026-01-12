@@ -277,7 +277,7 @@ jobs:
           path: build/libfreetype.so
 
   # ============================================
-  # iOS (arm64)
+  # iOS Universal (arm64 device + x86_64 simulator)
   # ============================================
   build-ios:
     runs-on: macos-14
@@ -286,41 +286,42 @@ jobs:
         with:
           ref: csharp-patch
 
-      - name: Build zlib
+      # --- Build for Device (arm64) ---
+      - name: Build zlib (device arm64)
         run: |
           git clone --depth 1 --branch v${{ env.ZLIB_VERSION }} https://github.com/madler/zlib.git zlib-src
-          cd zlib-src && mkdir build && cd build
+          cd zlib-src && mkdir build-device && cd build-device
           cmake .. \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps-device \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build . -j$(sysctl -n hw.ncpu)
           cmake --install .
 
-      - name: Build libpng
+      - name: Build libpng (device arm64)
         run: |
           git clone --depth 1 --branch v${{ env.LIBPNG_VERSION }} https://github.com/glennrp/libpng.git libpng-src
-          cd libpng-src && mkdir build && cd build
+          cd libpng-src && mkdir build-device && cd build-device
           cmake .. \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps-device \
             -DPNG_SHARED=OFF -DPNG_STATIC=ON -DPNG_TESTS=OFF \
             -DPNG_ARM_NEON=on \
-            -DZLIB_LIBRARY=${{ github.workspace }}/deps/lib/libz.a \
-            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DZLIB_LIBRARY=${{ github.workspace }}/deps-device/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps-device/include \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build . -j$(sysctl -n hw.ncpu)
           cmake --install .
 
-      - name: Build FreeType
+      - name: Build FreeType (device arm64)
         run: |
-          mkdir build && cd build
+          mkdir build-device && cd build-device
           cmake .. \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -332,23 +333,96 @@ jobs:
             -DFT_DISABLE_BZIP2=ON \
             -DFT_DISABLE_BROTLI=ON \
             -DFT_DISABLE_HARFBUZZ=ON \
-            -DPNG_LIBRARY=${{ github.workspace }}/deps/lib/libpng.a \
-            -DPNG_PNG_INCLUDE_DIR=${{ github.workspace }}/deps/include \
-            -DZLIB_LIBRARY=${{ github.workspace }}/deps/lib/libz.a \
-            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps/include \
+            -DPNG_LIBRARY=${{ github.workspace }}/deps-device/lib/libpng.a \
+            -DPNG_PNG_INCLUDE_DIR=${{ github.workspace }}/deps-device/include \
+            -DZLIB_LIBRARY=${{ github.workspace }}/deps-device/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps-device/include \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build . -j$(sysctl -n hw.ncpu)
 
-      - name: Create combined static library
+      - name: Create device fat library
         run: |
-          libtool -static -o libfreetype-fat.a \
-            build/libfreetype.a \
-            ${{ github.workspace }}/deps/lib/libpng.a \
-            ${{ github.workspace }}/deps/lib/libz.a
+          libtool -static -o libfreetype-device.a \
+            build-device/libfreetype.a \
+            ${{ github.workspace }}/deps-device/lib/libpng.a \
+            ${{ github.workspace }}/deps-device/lib/libz.a
+
+      # --- Build for Simulator (x86_64) ---
+      - name: Build zlib (simulator x86_64)
+        run: |
+          cd zlib-src && mkdir build-sim && cd build-sim
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps-sim \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(sysctl -n hw.ncpu)
+          cmake --install .
+
+      - name: Build libpng (simulator x86_64)
+        run: |
+          cd libpng-src && mkdir build-sim && cd build-sim
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps-sim \
+            -DPNG_SHARED=OFF -DPNG_STATIC=ON -DPNG_TESTS=OFF \
+            -DPNG_ARM_NEON=off \
+            -DZLIB_LIBRARY=${{ github.workspace }}/deps-sim/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps-sim/include \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(sysctl -n hw.ncpu)
+          cmake --install .
+
+      - name: Build FreeType (simulator x86_64)
+        run: |
+          mkdir build-sim && cd build-sim
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DFT_REQUIRE_PNG=ON \
+            -DFT_REQUIRE_ZLIB=ON \
+            -DFT_DISABLE_BZIP2=ON \
+            -DFT_DISABLE_BROTLI=ON \
+            -DFT_DISABLE_HARFBUZZ=ON \
+            -DPNG_LIBRARY=${{ github.workspace }}/deps-sim/lib/libpng.a \
+            -DPNG_PNG_INCLUDE_DIR=${{ github.workspace }}/deps-sim/include \
+            -DZLIB_LIBRARY=${{ github.workspace }}/deps-sim/lib/libz.a \
+            -DZLIB_INCLUDE_DIR=${{ github.workspace }}/deps-sim/include \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build . -j$(sysctl -n hw.ncpu)
+
+      - name: Create simulator fat library
+        run: |
+          libtool -static -o libfreetype-sim.a \
+            build-sim/libfreetype.a \
+            ${{ github.workspace }}/deps-sim/lib/libpng.a \
+            ${{ github.workspace }}/deps-sim/lib/libz.a
+
+      # --- Combine into Universal Binary ---
+      - name: Create universal binary (device + simulator)
+        run: |
+          lipo -create \
+            libfreetype-device.a \
+            libfreetype-sim.a \
+            -output libfreetype-fat.a
+
+          echo "=== Verify architectures ==="
+          lipo -info libfreetype-fat.a
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ios-arm64
+          name: ios-universal
           path: libfreetype-fat.a
 
   # ============================================
@@ -458,10 +532,14 @@ jobs:
           cp artifacts/android-armeabi-v7a/libfreetype.so package/Plugins/Android/armeabi-v7a/
           cp artifacts/android-x86_64/libfreetype.so package/Plugins/Android/x86_64/
           cp artifacts/android-x86/libfreetype.so package/Plugins/Android/x86/
-          cp artifacts/ios-arm64/libfreetype-fat.a package/Plugins/iOS/libfreetype.a
+          cp artifacts/ios-universal/libfreetype-fat.a package/Plugins/iOS/libfreetype.a
           cp artifacts/tvos-arm64/libfreetype-fat.a package/Plugins/tvOS/libfreetype.a
 
+          echo "=== iOS library architectures ==="
+          lipo -info package/Plugins/iOS/libfreetype.a
+
           echo "FreeType with libpng (sbix) support - Built from csharp-patch branch" > package/README.txt
+          echo "iOS: Universal (arm64 device + x86_64 simulator)" >> package/README.txt
 
       - uses: actions/upload-artifact@v4
         with:
