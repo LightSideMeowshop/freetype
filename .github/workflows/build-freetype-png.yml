@@ -535,9 +535,6 @@ jobs:
           cp artifacts/ios-universal/libfreetype.a package/Plugins/iOS/libfreetype.a
           cp artifacts/tvos-arm64/libfreetype-fat.a package/Plugins/tvOS/libfreetype.a
 
-          echo "=== iOS library architectures ==="
-          lipo -info package/Plugins/iOS/libfreetype.a
-
           echo "FreeType with libpng (sbix) support - Built from csharp-patch branch" > package/README.txt
           echo "iOS: Universal (arm64 device + x86_64 simulator)" >> package/README.txt
 
